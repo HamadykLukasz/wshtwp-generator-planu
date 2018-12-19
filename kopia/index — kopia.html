@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="pl">
+
+<head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        <title>WSH TWP - Jaki mamy plan?</title>
+
+        <script src="./script/pdf.worker.js"></script>
+        <script src="./script/pdf.js"></script>
+        <script src="./script/lodash.js"></script>
+        <!-- <script src="./script/jquery-3.3.1.min.js"></script> -->
+        <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+</head>
+
+<body>
+        <input type="file" id="insertPDF" name="insertPDF" accept=".pdf" />
+
+</body>
+<script>
+        var lessons = [];
+
+        $("#insertPDF").change(function (event) {
+                var file = event.target.files[0];
+
+                //Step 2: Read the file using file reader
+                var fileReader = new FileReader();
+
+                fileReader.onload = function () {
+                        //Step 4:turn array buffer into typed array
+                        var typedarray = new Uint8Array(this.result);
+
+                        //Step 5:PDFJS should be able to read this
+                        pdfjsLib.getDocument(typedarray).then(function (pdf) {
+                                pdf.getPage(1).then(function (page) {
+                                        //console.log(page);
+                                        page.getTextContent().then(function (textContent) {
+                                                //console.log(textContent);
+                                                var rawStrings = textContent.items;
+
+                                                removed = _.remove(rawStrings, function (item) {
+                                                        return item.str !== "÷";
+                                                });
+
+                                                grouped = _.groupBy(removed, function (string) {
+                                                        return string.transform[5];
+                                                });
+
+                                                //Zamiana tablicy obiektow na array
+                                                groupedArray = _.values(grouped);
+                                                console.log(groupedArray);
+                                                checkForMultipleLines(groupedArray)
+                                                console.log(groupedArray);
+
+                                                for (var i = 0; i < groupedArray.length; i++) {
+                                                        console.log("Current: ", groupedArray[i]);
+                                                        var current = groupedArray[i];
+                                                        var next = groupedArray[i + 1];
+
+                                                        if (current.length == 2 && next.length >= 7) {
+                                                                var date = isDate(current[0].str);
+                                                                var group;
+                                                                var lecturer = next[0].str;
+                                                                var start = next[1].str;
+                                                                var end = next[2].str;
+                                                                var room = "MC";
+                                                                var label = "";
+                                                                var type = setType(next[next.length - 1].transform[4]);
+
+                                                                if (current[1].str == "Wykłady - wszstkie grupy") {
+                                                                        group = "Wykłady - wszystkie grupy";
+                                                                } else {
+                                                                        group = current[1].str;
+                                                                }
+
+                                                                for (var k = 0; k < next.length; k++) {
+                                                                        if (
+                                                                                next[k].str.startsWith("MC") ||
+                                                                                next[k].str.startsWith("Br")
+                                                                        ) {
+                                                                                room = next[k].str;
+                                                                                kk_begin = k + 1;
+                                                                                for (var kk = kk_begin; kk < next.length - 1; kk++) {
+                                                                                        label += next[kk].str;
+                                                                                }
+                                                                                
+                                                                                break;
+                                                                        }
+                                                                }
+
+                                                                // for(var kk = kk_begin; kk < next.length - 1; kk++){
+                                                                //         console.log(kk);
+                                                                //         label += next[kk].str;
+                                                                // }
+
+                                                                var merged = "";
+                                                                if (containsNonLatinCodepoints(next[1].str)) {
+                                                                        for (var j = 0; j < next.length; j++) {
+                                                                                if (!isTime(next[j].str)) {
+                                                                                        merged += next[j].str;
+                                                                                } else {
+                                                                                        start = next[j].str;
+                                                                                        end = next[j + 1].str;
+                                                                                        room = next[j + 2].str;
+                                                                                        lecturer = merged;
+                                                                                        break;
+                                                                                }
+                                                                        }
+                                                                }
+                                                                if (isDate(current[0].str)) {
+                                                                        lessons.push({
+                                                                                date: date,
+                                                                                group: group,
+                                                                                lecturer: lecturer,
+                                                                                start: start,
+                                                                                end: end,
+                                                                                room: room,
+                                                                                label: label,
+                                                                                hours: next[next.length - 1].str,
+                                                                                type: type
+                                                                        });
+                                                                        label = "";
+                                                                }
+                                                        }
+                                                }
+                                                console.log(lessons);
+                                        });
+                                });
+                        });
+                };
+                //Step 3:Read the file as ArrayBuffer
+                fileReader.readAsArrayBuffer(file);
+        });
+
+        function isDate(date) {
+                if (date.match(/\d{2}-\d{2}-\d{4}/) && date.length == 10) return date;
+        }
+
+        function isTime(time) {
+                if (
+                        time.match(/^([0-9]|0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/) &&
+                        time.length == 5
+                ) {
+                        return time;
+                } else {
+                        return false;
+                }
+        }
+
+        function containsNonLatinCodepoints(s) {
+                return /[^\u0000-\u00ff]/.test(s);
+        }
+
+        function setRoom(room) {
+                if (room.startsWith("MC") || room.startsWith("Br")) {
+                        return room;
+                } else {
+                        return false;
+                }
+        }
+
+        function checkForMultipleLines(array){
+                
+                for(var i = 0; i < array.length; i++){
+                        var current = array[i];
+                        var next = array[i + 1];
+        
+                        if(current.length >= 7 && next.length == 1 ){
+                                for(j = 0; j < next.length; j++){
+                                        current.splice(current.length-1, 0, {str:" " + next[j].str});    
+                                }
+                                //current.splice(current.length-1, 0, {str:" " + next[0].str});
+                        }
+                }
+        }
+
+        function setType(type) {
+                //Dorobić jeszcze dla Komputerowych i Seminariow
+                switch (type) {
+                        case 259.559896176:
+                                return "Wykład";
+                                break;
+                        case 266.759893296:
+                                return "Ćwiczenia";
+                                break;
+                        case 275.159889936:
+                                return "Języki obce";
+                }
+        }
+</script>
+
+</html>
